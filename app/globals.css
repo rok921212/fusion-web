@@ -1,26 +1,167 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-brand: #d90429;
+  --color-brand-dark: #b00020;
+  --color-brand-soft: #fdecef;
+  --color-ink: #111114;
+  --color-ink-soft: #3a3a42;
+  --color-muted: #6b6b76;
+  --color-mist: #f7f7f8;
+  --color-line: #e6e6ea;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-barlow);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #ffffff;
+  color: var(--color-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--color-brand);
+  color: #ffffff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .heading-display {
+    @apply font-display font-bold uppercase leading-[0.95] tracking-tight;
+  }
+
+  .eyebrow {
+    @apply inline-flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-brand;
+  }
+
+  .eyebrow::before {
+    content: "";
+    @apply h-px w-8 bg-brand;
+  }
+}
+
+/* Animated SVG artwork (components/site/svg-art.tsx) */
+.svg-flow {
+  stroke-dasharray: 60 420;
+  animation: svg-flow 5s linear infinite;
+}
+.svg-flow-slow {
+  animation-duration: 8s;
+}
+.svg-flow-reverse {
+  animation-direction: reverse;
+}
+.svg-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: svg-pulse 2.4s ease-in-out infinite;
+}
+.svg-spin {
+  animation: svg-spin 40s linear infinite;
+}
+.svg-spin-reverse {
+  animation-duration: 28s;
+  animation-direction: reverse;
+}
+.svg-draw {
+  stroke-dasharray: 430;
+  animation: svg-draw 6s ease-in-out infinite alternate;
+}
+.marquee-track {
+  animation: marquee 32s linear infinite;
+}
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes svg-flow {
+  from {
+    stroke-dashoffset: 480;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes svg-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(2.2);
+    opacity: 0.3;
+  }
+}
+@keyframes svg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes svg-draw {
+  from {
+    stroke-dashoffset: 430;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .svg-flow,
+  .svg-pulse,
+  .svg-spin,
+  .svg-draw,
+  .marquee-track {
+    animation: none;
+  }
+  .svg-draw {
+    stroke-dasharray: none;
+  }
+}
+
+/* Home page headline cursor (components/site/hero-rotator.tsx) */
+.hero-caret {
+  display: inline-block;
+  width: 0.08em;
+  height: 0.82em;
+  margin-left: 0.06em;
+  vertical-align: -0.04em;
+  background: var(--color-brand);
+  animation: hero-caret 0.9s steps(1) infinite;
+}
+@keyframes hero-caret {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-caret {
+    animation: none;
+  }
 }
