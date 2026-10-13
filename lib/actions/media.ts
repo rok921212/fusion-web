@@ -6,6 +6,7 @@ import { del } from "@vercel/blob";
 import { ObjectId } from "mongodb";
 import { redirect } from "next/navigation";
 import { audit } from "@/lib/audit";
+import { cloudinaryPublicId, deleteFromCloudinary } from "@/lib/cloudinary";
 import { requireAdmin } from "@/lib/dal";
 import { getDb } from "@/lib/db";
 import { C, type MediaDoc } from "@/lib/db/schema";
@@ -33,6 +34,10 @@ export async function deleteMedia(id: string, formData: FormData) {
     if (UPLOAD_NAME.test(name)) {
       await unlink(path.join(/* turbopackIgnore: true */ UPLOAD_DIR, name)).catch(() => {});
     }
+  } else if (cloudinaryPublicId(item.url)) {
+    await deleteFromCloudinary(cloudinaryPublicId(item.url)!).catch((error) =>
+      console.error(error),
+    );
   } else if (process.env.BLOB_READ_WRITE_TOKEN) {
     await del(item.url).catch(() => {});
   }

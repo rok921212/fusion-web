@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { put } from "@vercel/blob";
 import { audit } from "@/lib/audit";
+import { cloudinaryConfigured, uploadToCloudinary } from "@/lib/cloudinary";
 import { getCurrentAdmin } from "@/lib/dal";
 import { getDb } from "@/lib/db";
 import { C } from "@/lib/db/schema";
@@ -53,17 +54,32 @@ export async function POST(request: Request) {
     );
   }
 
-  const name = `${randomUUID()}.${extension}`;
+  const id = randomUUID();
+  const name = `${id}.${extension}`;
   let url: string;
 
-  // Hosted storage when configured (needed on serverless hosts), otherwise
-  // the local disk.
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  // Hosted storage when configured (needed on serverless hosts): Cloudinary
+  // first, then Vercel Blob, otherwise the local disk.
+  if (cloudinaryConfigured()) {
+    try {
+      ({ url } = await uploadToCloudinary(bytes, type, id));
+    } catch (error) {
+      console.error(error);
+      return Response.json({ error: "The image could not be stored. Try again." }, { status: 502 });
+    }
+  } else if (process.env.BLOB_READ_WRITE_TOKEN) {
     const blob = await put(`uploads/${name}`, Buffer.from(bytes), {
       access: "public",
       contentType: type,
     });
     url = blob.url;
+  } else if (process.env.VERCEL) {
+    // Serverless file systems are read-only; the disk fallback cannot work.
+    console.error("No image storage configured: set the CLOUDINARY_* variables.");
+    return Response.json(
+      { error: "Image storage is not configured on the server." },
+      { status: 500 },
+    );
   } else {
     await mkdir(UPLOAD_DIR, { recursive: true });
     await writeFile(path.join(/* turbopackIgnore: true */ UPLOAD_DIR, name), bytes);

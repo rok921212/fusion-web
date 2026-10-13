@@ -165,7 +165,7 @@ export async function registerWithCode(
 
   const db = await getDb();
   const admins = db.collection<AdminDoc>(C.admins);
-  const isFirst = (await admins.estimatedDocumentCount()) === 0;
+  const isFirst = (await admins.countDocuments({}, { limit: 1 })) === 0;
   const security = await getSecuritySettings();
   if (!isFirst && !security.codeSignup) {
     return { error: "Sign-up with an access code is turned off. Ask a super admin for an invitation." };

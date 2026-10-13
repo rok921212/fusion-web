@@ -25,7 +25,7 @@ async function Access() {
   if (await getCurrentAdmin()) redirect("/admin");
 
   const db = await requestDb();
-  if ((await db.collection(C.admins).estimatedDocumentCount()) === 0) {
+  if ((await db.collection(C.admins).countDocuments({}, { limit: 1 })) === 0) {
     redirect("/admin/register");
   }
 

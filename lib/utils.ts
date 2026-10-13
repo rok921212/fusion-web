@@ -27,8 +27,13 @@ export function formatDate(date: Date | string | null | undefined) {
 }
 
 const BLOB_HOST = /^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//;
+const CLOUDINARY = /^https:\/\/res\.cloudinary\.com\/[a-z0-9_-]+\/image\/upload\//i;
 
-// Images are only ever served from our Blob store or from /public.
+// Images are only ever served from our Blob store, Cloudinary or /public.
 export function isAllowedImageUrl(url: string) {
-  return BLOB_HOST.test(url) || (url.startsWith("/") && !url.startsWith("//"));
+  return (
+    BLOB_HOST.test(url) ||
+    CLOUDINARY.test(url) ||
+    (url.startsWith("/") && !url.startsWith("//"))
+  );
 }

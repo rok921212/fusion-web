@@ -27,7 +27,7 @@ async function Register() {
   if (await getCurrentAdmin()) redirect("/admin");
 
   const db = await requestDb();
-  const first = (await db.collection(C.admins).estimatedDocumentCount()) === 0;
+  const first = (await db.collection(C.admins).countDocuments({}, { limit: 1 })) === 0;
   const security = await getSecuritySettings();
   const enabled = !!process.env.ADMIN_INVITE_SECRET && (first || security.codeSignup);
 
@@ -45,6 +45,21 @@ async function Register() {
           </p>
           <RegisterForm first={first} />
         </>
+      ) : first ? (
+        <div className="mb-2 mt-4 space-y-3 text-sm text-muted">
+          <p>
+            There are no administrator accounts in the database this site is
+            connected to, and no access code is configured on the server, so the
+            first account cannot be created yet.
+          </p>
+          <p>
+            In your host&apos;s environment variables, set{" "}
+            <code className="font-mono text-ink">ADMIN_INVITE_SECRET</code>, and check that{" "}
+            <code className="font-mono text-ink">MONGODB_URI</code> and{" "}
+            <code className="font-mono text-ink">MONGODB_DB</code> point to the
+            database that holds your accounts. Then redeploy and reload this page.
+          </p>
+        </div>
       ) : (
         <p className="mb-2 mt-4 text-sm text-muted">
           Sign-up with an access code is turned off. Ask a super admin to send you

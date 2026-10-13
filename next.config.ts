@@ -10,7 +10,7 @@ const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://i.ytimg.com https://*.public.blob.vercel-storage.com",
+  "img-src 'self' data: blob: https://i.ytimg.com https://*.public.blob.vercel-storage.com https://res.cloudinary.com",
   "font-src 'self' data:",
   `connect-src 'self'${isDev ? " ws: wss:" : ""}`,
   "frame-src https://www.youtube-nocookie.com",
@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
       { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
+      { protocol: "https", hostname: "res.cloudinary.com", pathname: "/*/image/upload/**" },
       { protocol: "https", hostname: "i.ytimg.com", pathname: "/vi/**" },
     ],
   },
