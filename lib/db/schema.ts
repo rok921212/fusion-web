@@ -129,6 +129,8 @@ export type AdminDoc = {
   _id: ObjectId;
   name: string;
   email: string;
+  /** Lowercase login ID; older accounts may not have one. */
+  username?: string;
   passwordHash: string;
   role: Role;
   active: boolean;
@@ -187,6 +189,7 @@ export function ensureIndexes(db: Db) {
     // the site from reading and writing.
     const results = await Promise.allSettled([
       db.collection(C.admins).createIndex({ email: 1 }, { unique: true }),
+      db.collection(C.admins).createIndex({ username: 1 }, { unique: true, sparse: true }),
       db.collection(C.sessions).createIndex({ tokenHash: 1 }, { unique: true }),
       db.collection(C.sessions).createIndex({ adminId: 1 }),
       db.collection(C.sessions).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),

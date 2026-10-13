@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -15,6 +16,7 @@ export type CurrentAdmin = {
   id: string;
   name: string;
   email: string;
+  username: string | null;
   role: Role;
   sessionId: string;
 };
@@ -31,6 +33,12 @@ export async function requestDb() {
 
 export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
+}
+
+const BCRYPT_COST = 12;
+
+export function hashPassword(password: string) {
+  return bcrypt.hash(password, BCRYPT_COST);
 }
 
 export function newToken() {
@@ -59,6 +67,7 @@ export const getCurrentAdmin = cache(async (): Promise<CurrentAdmin | null> => {
     id: admin._id.toString(),
     name: admin.name,
     email: admin.email,
+    username: admin.username ?? null,
     role: admin.role,
     sessionId: session._id.toString(),
   };

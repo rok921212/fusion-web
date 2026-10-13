@@ -5,6 +5,7 @@ import {
   isHttpUrl,
   isSafeHref,
   passwordProblem,
+  usernameProblem,
   safeRedirectPath,
   sniffImageType,
 } from "../lib/validation.ts";
@@ -57,4 +58,20 @@ test("image type comes from the file bytes", () => {
   assert.equal(sniffImageType(webp), "image/webp");
   assert.equal(sniffImageType(html), null);
   assert.equal(sniffImageType(svg), null);
+});
+
+test("usernames are short lowercase IDs without @", () => {
+  assert.equal(usernameProblem("john"), null);
+  assert.equal(usernameProblem("j.doe_2-x"), null);
+  assert.ok(usernameProblem("jo"));
+  assert.ok(usernameProblem("a".repeat(33)));
+  assert.ok(usernameProblem("John"));
+  assert.ok(usernameProblem("john@example.com"));
+  assert.ok(usernameProblem(".john"));
+  assert.ok(usernameProblem("jo hn"));
+});
+
+test("passwords may not contain the username", () => {
+  assert.ok(passwordProblem("Fusionjohn-2026", "", "john"));
+  assert.equal(passwordProblem("Fusion-Admin-2026", "", "john"), null);
 });

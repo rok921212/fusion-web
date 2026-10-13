@@ -2,10 +2,12 @@
 
 import { Check, Copy, KeyRound } from "lucide-react";
 import { useState } from "react";
+import { NewPasswordFields, TextField, UsernameField } from "@/components/admin/auth-forms";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label, Select } from "@/components/ui/form";
 import { useFormAction } from "@/components/ui/use-form-action";
 import {
+  createAdmin,
   createInvitation,
   createResetLink,
   saveSecuritySettings,
@@ -37,6 +39,61 @@ function OneTimeLink({ state }: { state: UserFormState }) {
         This link is shown only once. Send it privately, for example by direct message.
       </p>
     </div>
+  );
+}
+
+export function CreateAdminForm() {
+  const [state, onSubmit, pending] = useFormAction(createAdmin, undefined);
+  const errors = state?.errors ?? {};
+  const [role, setRole] = useState<Role>("editor");
+  // After each successful creation, start a fresh, empty form.
+  const [seen, setSeen] = useState(state);
+  const [round, setRound] = useState(0);
+  if (state !== seen) {
+    setSeen(state);
+    if (state?.ok) {
+      setRound(round + 1);
+      setRole("editor");
+    }
+  }
+
+  return (
+    <form key={round} onSubmit={onSubmit} noValidate className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField name="name" label="Name" autoComplete="off" errors={errors} />
+        <UsernameField errors={errors} />
+        <TextField name="email" label="Email" type="email" autoComplete="off" errors={errors} />
+        <div>
+          <Label htmlFor="create-role">Role</Label>
+          <Select
+            id="create-role"
+            name="role"
+            value={role}
+            onChange={(event) => setRole(event.target.value as Role)}
+          >
+            {roles.map((value) => (
+              <option key={value} value={value}>
+                {roleLabels[value]}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1.5 text-xs text-muted">{roleDescriptions[role]}</p>
+          <FieldError id="create-role-error" message={errors.role} />
+        </div>
+        <NewPasswordFields errors={errors} />
+      </div>
+      {state?.message && (
+        <p
+          role="status"
+          className={state.ok ? "text-sm font-medium text-green-700" : "text-sm text-brand"}
+        >
+          {state.message}
+        </p>
+      )}
+      <Button type="submit" disabled={pending}>
+        {pending ? "Creating…" : "Create administrator"}
+      </Button>
+    </form>
   );
 }
 

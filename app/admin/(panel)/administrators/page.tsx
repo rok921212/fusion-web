@@ -1,10 +1,20 @@
 import { LogOut, Trash2 } from "lucide-react";
-import { InviteForm, ResetLinkButton, SecurityForm } from "@/components/admin/admin-users";
+import {
+  CreateAdminForm,
+  InviteForm,
+  ResetLinkButton,
+  SecurityForm,
+} from "@/components/admin/admin-users";
 import { ConfirmButton } from "@/components/admin/confirm-button";
 import { Badge, Notice, PageHeader, Panel } from "@/components/admin/ui";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/form";
-import { deleteInvitation, revokeAdminSessions, updateAdmin } from "@/lib/actions/users";
+import {
+  deleteAdmin,
+  deleteInvitation,
+  revokeAdminSessions,
+  updateAdmin,
+} from "@/lib/actions/users";
 import { requestDb, requireAdmin } from "@/lib/dal";
 import { C, type AdminDoc, type InvitationDoc } from "@/lib/db/schema";
 import { roleLabels, roles } from "@/lib/permissions";
@@ -19,6 +29,7 @@ export const metadata = { title: "Administrators" };
 const errors: Record<string, string> = {
   self: "You cannot change your own role or deactivate yourself. Ask another super admin.",
   last: "There must always be at least one active super admin.",
+  deleteSelf: "You cannot delete your own account. Ask another super admin.",
 };
 
 export default async function AdministratorsPage({
@@ -56,6 +67,7 @@ export default async function AdministratorsPage({
       )}
       {query.saved && <Notice>Administrator updated.</Notice>}
       {query.revoked && <Notice>Sessions revoked.</Notice>}
+      {query.deleted && <Notice>Administrator deleted.</Notice>}
 
       <Panel title="Team">
         <ul className="divide-y divide-line">
@@ -70,7 +82,9 @@ export default async function AdministratorsPage({
                     {isMe && <Badge tone="brand">You</Badge>}
                     {!admin.active && <Badge>Deactivated</Badge>}
                   </p>
-                  <p className="truncate text-sm text-muted">{admin.email}</p>
+                  <p className="truncate text-sm text-muted">
+                    {admin.username ? `@${admin.username}` : "No username"} · {admin.email}
+                  </p>
                   <p className="mt-0.5 text-xs text-muted">
                     Last sign-in {admin.lastLoginAt ? formatDate(admin.lastLoginAt) : "never"} ·{" "}
                     {sessions.get(id) ?? 0} active session{sessions.get(id) === 1 ? "" : "s"}
@@ -118,6 +132,18 @@ export default async function AdministratorsPage({
                       <LogOut /> {isMe ? "Sign out other devices" : "Sign out"}
                     </Button>
                   </form>
+                  {!isMe && (
+                    <form action={deleteAdmin.bind(null, id)}>
+                      <ConfirmButton
+                        message={`Permanently delete ${admin.name} (${admin.email})${
+                          admin.role === "super_admin" ? ", a super admin" : ""
+                        }? This cannot be undone.`}
+                        aria-label={`Delete ${admin.email}`}
+                      >
+                        <Trash2 /> Delete
+                      </ConfirmButton>
+                    </form>
+                  )}
                 </div>
               </li>
             );
@@ -125,8 +151,21 @@ export default async function AdministratorsPage({
         </ul>
       </Panel>
 
+      <Panel title="Create an administrator" className="mt-6">
+        <div className="p-5">
+          <p className="mb-4 max-w-2xl text-sm text-muted">
+            Set their username and password yourself. The account works straight away;
+            share the details privately and ask them to change the password under My account.
+          </p>
+          <CreateAdminForm />
+        </div>
+      </Panel>
+
       <Panel title="Invite an administrator" className="mt-6">
         <div className="p-5">
+          <p className="mb-4 max-w-2xl text-sm text-muted">
+            Or send a one-time link so they choose their own username and password.
+          </p>
           <InviteForm defaultDays={security.inviteDays} />
         </div>
       </Panel>

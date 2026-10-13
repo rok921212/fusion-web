@@ -5,12 +5,12 @@ import { ObjectId } from "mongodb";
 import { redirect } from "next/navigation";
 import * as z from "zod";
 import { audit } from "@/lib/audit";
-import { hashToken, newToken, requireAdmin, revokeSessions } from "@/lib/dal";
+import { hashPassword, hashToken, newToken, requireAdmin, revokeSessions } from "@/lib/dal";
 import { getDb } from "@/lib/db";
 import { C, type AdminDoc, type InvitationDoc } from "@/lib/db/schema";
 import { isRole, type Role } from "@/lib/permissions";
 import { siteUrl } from "@/lib/site";
-import { OBJECT_ID } from "@/lib/validation";
+import { OBJECT_ID, passwordProblem, usernameProblem } from "@/lib/validation";
 
 export type UserFormState =
   | { errors?: Record<string, string>; message?: string; ok?: boolean; link?: string }
@@ -94,6 +94,84 @@ export async function createInvitation(
   };
 }
 
+const createSchema = z.object({
+  name: z.string().trim().min(2, "Enter their name.").max(80),
+  username: z.string().superRefine((value, ctx) => {
+    const problem = usernameProblem(value);
+    if (problem) ctx.addIssue({ code: "custom", message: problem });
+  }),
+  email: z.email("Enter a valid email address.").max(200),
+  role: z.string().refine(isRole, "Choose a role."),
+});
+
+/** Creates a ready-to-use account with a username and password set by a super admin. */
+export async function createAdmin(
+  _prev: UserFormState,
+  formData: FormData,
+): Promise<UserFormState> {
+  const actor = await requireAdmin("admins.manage");
+
+  const parsed = createSchema.safeParse({
+    name: formData.get("name"),
+    username: String(formData.get("username") ?? "").trim().toLowerCase(),
+    email: String(formData.get("email") ?? "").trim().toLowerCase(),
+    role: formData.get("role"),
+  });
+  const errors: Record<string, string> = {};
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
+  }
+  const password = String(formData.get("password") ?? "");
+  const problem = passwordProblem(
+    password,
+    parsed.data?.email ?? "",
+    parsed.data?.username ?? "",
+  );
+  if (problem) errors.password = problem;
+  if (password !== String(formData.get("confirm") ?? "")) {
+    errors.confirm = "The passwords do not match.";
+  }
+  if (!parsed.success || Object.keys(errors).length) return { errors };
+  const { name, username, email, role } = parsed.data;
+
+  const db = await getDb();
+  const admins = db.collection<AdminDoc>(C.admins);
+  if (await admins.findOne({ email })) {
+    return { errors: { email: "An administrator with this email already exists." } };
+  }
+  if (await admins.findOne({ username })) {
+    return { errors: { username: "This username is taken." } };
+  }
+
+  const now = new Date();
+  let id: ObjectId;
+  try {
+    ({ insertedId: id } = await admins.insertOne({
+      _id: new ObjectId(),
+      name,
+      email,
+      username,
+      passwordHash: await hashPassword(password),
+      role: role as Role,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: null,
+    }));
+  } catch {
+    return { message: "An administrator with this email or username already exists." };
+  }
+
+  await audit(actor, "admin.created", { type: "admin", id: id.toString(), label: email }, {
+    role,
+    username,
+  });
+  return {
+    ok: true,
+    message: `Account created. ${name} can now sign in with the username “${username}”.`,
+  };
+}
+
 export async function createResetLink(adminId: string): Promise<UserFormState> {
   const actor = await requireAdmin("admins.manage");
   const db = await getDb();
@@ -154,6 +232,36 @@ export async function updateAdmin(adminId: string, formData: FormData) {
     active,
   });
   redirect("/admin/administrators?saved=1");
+}
+
+/**
+ * Permanently removes another administrator, super admins included. You
+ * cannot delete yourself, so an active super admin always remains.
+ */
+export async function deleteAdmin(adminId: string) {
+  const actor = await requireAdmin("admins.manage");
+  const id = toObjectId(adminId);
+  if (adminId === actor.id) redirect("/admin/administrators?error=deleteSelf");
+
+  const db = await getDb();
+  const target = await db.collection<AdminDoc>(C.admins).findOne({ _id: id });
+  if (!target) redirect("/admin/administrators");
+  if (
+    target.role === "super_admin" &&
+    target.active &&
+    (await activeSuperAdmins(id)) === 0
+  ) {
+    redirect("/admin/administrators?error=last");
+  }
+
+  await db.collection(C.admins).deleteOne({ _id: id });
+  await revokeSessions(id);
+  await db.collection(C.invitations).deleteMany({ adminId: id });
+  await audit(actor, "admin.deleted", { type: "admin", id: adminId, label: target.email }, {
+    role: target.role,
+    username: target.username ?? null,
+  });
+  redirect("/admin/administrators?deleted=1");
 }
 
 export async function revokeAdminSessions(adminId: string) {

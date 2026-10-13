@@ -10,6 +10,7 @@ import {
   createSession,
   deleteSession,
   getCurrentAdmin,
+  hashPassword,
   hashToken,
   requestDb,
   requireAdmin,
@@ -25,13 +26,12 @@ import {
   progressiveDelay,
   recordAttempt,
 } from "@/lib/rate-limit";
-import { passwordProblem } from "@/lib/validation";
+import { passwordProblem, usernameProblem } from "@/lib/validation";
 
 export type AuthState =
   | { error?: string; ok?: boolean; message?: string; errors?: Record<string, string> }
   | undefined;
 
-const BCRYPT_COST = 12;
 const WINDOW_MS = 15 * 60 * 1000;
 // Compared against when the email is unknown, so every failure costs the same.
 const DUMMY_HASH = "$2b$12$SpfJd7orfuc9lsy2NwAUQu0sfR4PRVO3b6Ol5QwzHQPGMYCtfCAIe";
@@ -51,14 +51,39 @@ function checkNewPassword(
   formData: FormData,
   email: string,
   errors: Record<string, string>,
+  username = "",
 ) {
   const password = field(formData, "password");
-  const problem = passwordProblem(password, email);
+  const problem = passwordProblem(password, email, username);
   if (problem) errors.password = problem;
   if (password !== field(formData, "confirm")) {
     errors.confirm = "The passwords do not match.";
   }
   return password;
+}
+
+/**
+ * Reads and validates the "username" field, checking it is not taken by
+ * another account. Returns the lowercase username.
+ */
+async function checkUsername(
+  formData: FormData,
+  errors: Record<string, string>,
+  excludeId?: ObjectId,
+) {
+  const username = field(formData, "username").trim().toLowerCase();
+  const problem = usernameProblem(username);
+  if (problem) {
+    errors.username = problem;
+    return username;
+  }
+  const db = await getDb();
+  const taken = await db.collection<AdminDoc>(C.admins).findOne({
+    username,
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  });
+  if (taken) errors.username = "This username is taken.";
+  return username;
 }
 
 function sameSecret(given: string, expected: string) {
@@ -69,43 +94,46 @@ function sameSecret(given: string, expected: string) {
 
 export async function login(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const ip = await clientIp();
-  const email = field(formData, "email").trim().toLowerCase().slice(0, 200);
+  // Either an email or a username; usernames never contain "@".
+  const loginId = field(formData, "login").trim().toLowerCase().slice(0, 200);
   const ipKey = `login:ip:${ip}`;
-  const emailKey = `login:email:${email}`;
+  const idKey = `login:id:${loginId}`;
 
   if (
     (await isLimited(ipKey, 10, WINDOW_MS)) ||
-    (await isLimited(emailKey, 5, WINDOW_MS))
+    (await isLimited(idKey, 5, WINDOW_MS))
   ) {
     return { error: "Too many attempts. Try again in 15 minutes." };
   }
   await progressiveDelay(ipKey);
 
   const db = await getDb();
-  const admin = email
-    ? await db.collection<AdminDoc>(C.admins).findOne({ email })
+  const admin = loginId
+    ? await db
+        .collection<AdminDoc>(C.admins)
+        .findOne(loginId.includes("@") ? { email: loginId } : { username: loginId })
     : null;
-  // Always run the comparison so an unknown email takes as long as a wrong
+  // Always run the comparison so an unknown account takes as long as a wrong
   // password, and give the same message for both.
   const passwordOk = await bcrypt.compare(
     field(formData, "password").slice(0, 200),
     admin?.passwordHash ?? DUMMY_HASH,
   );
   if (!admin || !passwordOk || !admin.active) {
-    await recordAttempt(ipKey, emailKey);
-    await audit(null, "auth.login_failed", { type: "admin", label: email });
-    return { error: "Incorrect email or password." };
+    await recordAttempt(ipKey, idKey);
+    await audit(null, "auth.login_failed", { type: "admin", label: loginId });
+    return { error: "Incorrect username/email or password." };
   }
 
-  await clearAttempts(emailKey);
+  await clearAttempts(idKey);
   await db
     .collection(C.admins)
     .updateOne({ _id: admin._id }, { $set: { lastLoginAt: new Date() } });
   await createSession(admin._id);
-  await audit({ id: admin._id.toString(), email }, "auth.login", {
+  await audit({ id: admin._id.toString(), email: admin.email }, "auth.login", {
     type: "admin",
     id: admin._id.toString(),
-    label: email,
+    label: admin.email,
   });
   redirect("/admin");
 }
@@ -154,7 +182,8 @@ export async function registerWithCode(
   if (!name.success) errors.name = name.error.issues[0].message;
   const email = emailSchema.safeParse(field(formData, "email").trim().toLowerCase());
   if (!email.success) errors.email = email.error.issues[0].message;
-  const password = checkNewPassword(formData, email.data ?? "", errors);
+  const username = await checkUsername(formData, errors);
+  const password = checkNewPassword(formData, email.data ?? "", errors, username);
   if (!name.success || !email.success || Object.keys(errors).length) {
     return { errors };
   }
@@ -178,7 +207,8 @@ export async function registerWithCode(
       _id: new ObjectId(),
       name: name.data,
       email: email.data,
-      passwordHash: await bcrypt.hash(password, BCRYPT_COST),
+      username,
+      passwordHash: await hashPassword(password),
       role,
       active: true,
       createdAt: now,
@@ -186,7 +216,9 @@ export async function registerWithCode(
       lastLoginAt: now,
     }));
   } catch {
-    return { errors: { email: "An account with this email already exists. Sign in instead." } };
+    return {
+      error: "An account with this email or username already exists. Sign in instead.",
+    };
   }
 
   await clearAttempts(key);
@@ -239,7 +271,8 @@ export async function acceptInvitation(
   if (invite.kind === "invite" && !name.success) {
     errors.name = name.error.issues[0].message;
   }
-  const password = checkNewPassword(formData, invite.email, errors);
+  const username = invite.kind === "invite" ? await checkUsername(formData, errors) : "";
+  const password = checkNewPassword(formData, invite.email, errors, username);
   if (Object.keys(errors).length) return { errors };
 
   const db = await getDb();
@@ -252,7 +285,7 @@ export async function acceptInvitation(
     );
   if (!claimed) return { error: "This link has already been used." };
 
-  const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
+  const passwordHash = await hashPassword(password);
   const now = new Date();
   const admins = db.collection<AdminDoc>(C.admins);
   let adminId: ObjectId;
@@ -276,6 +309,7 @@ export async function acceptInvitation(
         _id: new ObjectId(),
         name: name.data ?? invite.name,
         email: invite.email,
+        username,
         passwordHash,
         role: invite.role,
         active: true,
@@ -284,7 +318,9 @@ export async function acceptInvitation(
         lastLoginAt: now,
       }));
     } catch {
-      return { error: "An account with this email already exists. Sign in instead." };
+      return {
+        error: "An account with this email or username already exists. Sign in instead.",
+      };
     }
     await audit(
       { id: adminId.toString(), email: invite.email },
@@ -303,16 +339,27 @@ export async function updateProfile(
   formData: FormData,
 ): Promise<AuthState> {
   const admin = await requireAdmin();
+  const id = new ObjectId(admin.id);
+  const errors: Record<string, string> = {};
   const name = nameSchema.safeParse(field(formData, "name"));
-  if (!name.success) return { errors: { name: name.error.issues[0].message } };
+  if (!name.success) errors.name = name.error.issues[0].message;
+  const username = await checkUsername(formData, errors, id);
+  if (!name.success || Object.keys(errors).length) return { errors };
 
   const db = await getDb();
-  await db
-    .collection(C.admins)
-    .updateOne(
-      { _id: new ObjectId(admin.id) },
-      { $set: { name: name.data, updatedAt: new Date() } },
-    );
+  try {
+    await db
+      .collection(C.admins)
+      .updateOne({ _id: id }, { $set: { name: name.data, username, updatedAt: new Date() } });
+  } catch {
+    return { errors: { username: "This username is taken." } };
+  }
+  if (username !== admin.username) {
+    await audit(admin, "admin.username_changed", { type: "admin", id: admin.id }, {
+      from: admin.username,
+      to: username,
+    });
+  }
   return { ok: true, message: "Profile saved." };
 }
 
@@ -337,12 +384,12 @@ export async function changePassword(
     await recordAttempt(key);
     errors.current = "The current password is not correct.";
   }
-  const password = checkNewPassword(formData, account.email, errors);
+  const password = checkNewPassword(formData, account.email, errors, account.username);
   if (Object.keys(errors).length) return { errors };
 
   await db.collection(C.admins).updateOne(
     { _id: account._id },
-    { $set: { passwordHash: await bcrypt.hash(password, BCRYPT_COST), updatedAt: new Date() } },
+    { $set: { passwordHash: await hashPassword(password), updatedAt: new Date() } },
   );
   // Every other device is signed out; this one gets a fresh session.
   await revokeSessions(account._id);

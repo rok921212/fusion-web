@@ -29,8 +29,8 @@ if (!CODE) {
 
 // Generated per run and never printed.
 const password = () => `Aa1!${randomBytes(12).toString("base64url")}`;
-const owner = { name: "Owner Test", email: "owner@example.test", password: password() };
-const editor = { name: "Editor Test", email: "editor@example.test", password: password() };
+const owner = { name: "Owner Test", username: "owner", email: "owner@example.test", password: password() };
+const editor = { name: "Editor Test", username: "editor", email: "editor@example.test", password: password() };
 const stamp = Date.now().toString(36);
 
 // Empty every collection but keep them (and their indexes, which the running
@@ -84,6 +84,7 @@ await step("an empty site sends /admin to the first-account setup", async () => 
 await step("a wrong access code is rejected", async () => {
   await page.fill("#code", "not-the-code");
   await page.fill("#name", owner.name);
+  await page.fill("#username", owner.username);
   await page.fill("#email", owner.email);
   await page.fill("#password", owner.password);
   await page.fill("#confirm", owner.password);
@@ -168,12 +169,35 @@ await step("a super admin can invite a content editor", async () => {
   assert.match(inviteLink, /\/admin\/invite\/[\w-]{20,}$/);
 });
 
+const direct = { name: "Direct Test", username: "direct", email: "direct@example.test", password: password() };
+await step("a super admin can create an account with a username and password", async () => {
+  await page.goto("/admin/administrators");
+  await page.fill("#name", direct.name);
+  await page.fill("#username", direct.username);
+  await page.fill("#email", direct.email);
+  await page.selectOption("#create-role", "editor");
+  await page.fill("#password", direct.password);
+  await page.fill("#confirm", direct.password);
+  await page.getByRole("button", { name: "Create administrator" }).click();
+  await page.getByText(`can now sign in with the username “${direct.username}”`).waitFor();
+
+  const ctx = await browser.newContext({ baseURL: BASE });
+  const directPage = await ctx.newPage();
+  await directPage.goto("/admin/login");
+  await directPage.fill("#login", direct.username);
+  await directPage.fill("#password", direct.password);
+  await directPage.getByRole("button", { name: "Sign in" }).click();
+  await directPage.waitForURL(/\/admin$/);
+  await ctx.close();
+});
+
 const editorCtx = await browser.newContext({ baseURL: BASE });
 const editorPage = await editorCtx.newPage();
 editorPage.setDefaultTimeout(20_000);
 
 await step("the invitation creates the editor account", async () => {
   await editorPage.goto(new URL(inviteLink).pathname);
+  await editorPage.fill("#username", editor.username);
   await editorPage.fill("#password", editor.password);
   await editorPage.fill("#confirm", editor.password);
   await editorPage.getByRole("button", { name: "Create my account" }).click();
@@ -233,10 +257,10 @@ await step("deactivating the editor ends their session immediately", async () =>
 });
 
 await step("a deactivated account cannot sign in", async () => {
-  await editorPage.fill("#email", editor.email);
+  await editorPage.fill("#login", editor.username);
   await editorPage.fill("#password", editor.password);
   await editorPage.getByRole("button", { name: "Sign in" }).click();
-  await editorPage.getByText("Incorrect email or password.").waitFor();
+  await editorPage.getByText("Incorrect username/email or password.").waitFor();
 });
 
 await step("the last super admin cannot remove their own access", async () => {
@@ -246,6 +270,23 @@ await step("the last super admin cannot remove their own access", async () => {
     0,
     "no role control on your own account",
   );
+});
+
+await step("a super admin can delete another super admin", async () => {
+  await page.goto("/admin/administrators");
+  const row = page.locator("li", { has: page.getByText(direct.email) });
+  await row.getByRole("combobox", { name: `Role for ${direct.email}` }).selectOption("super_admin");
+  await row.getByRole("button", { name: "Save" }).click();
+  await page.getByText("Administrator updated.").waitFor();
+  assert.equal(
+    await page.getByRole("button", { name: `Delete ${owner.email}` }).count(),
+    0,
+    "no delete control on your own account",
+  );
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: `Delete ${direct.email}` }).click();
+  await page.getByText("Administrator deleted.").waitFor();
+  assert.equal(await page.getByText(direct.email).count(), 0);
 });
 
 await step("uploads require a session and real image bytes", async () => {
@@ -289,10 +330,11 @@ await step("sign out, a wrong password, then sign in again", async () => {
   await page.waitForURL(/\/admin\/login$/);
   await page.goto("/admin/portfolio");
   await page.waitForURL(/\/admin\/login$/);
-  await page.fill("#email", owner.email);
+  await page.fill("#login", owner.email);
   await page.fill("#password", "Wrong-password-123");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.getByText("Incorrect email or password.").waitFor();
+  await page.getByText("Incorrect username/email or password.").waitFor();
+  await page.fill("#login", owner.username);
   await page.fill("#password", owner.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/admin$/);
@@ -306,6 +348,8 @@ await step("the audit log records the important actions", async () => {
     "auth.register_bad_code",
     "content.created",
     "admin.invited",
+    "admin.created",
+    "admin.deleted",
     "admin.invitation_accepted",
     "content.published",
     "admin.updated",

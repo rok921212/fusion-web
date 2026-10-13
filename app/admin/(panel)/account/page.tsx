@@ -21,10 +21,13 @@ export default async function AccountPage({ searchParams }: PageProps<"/admin/ac
         description={`${admin.email} · ${roleLabels[admin.role]}. ${roleDescriptions[admin.role]}`}
       />
       {query.signedOut && <Notice>Your other devices have been signed out.</Notice>}
+      {!admin.username && (
+        <Notice>Choose a username below so you can sign in with it instead of your email.</Notice>
+      )}
       <div className="space-y-6">
         <Panel title="Profile">
           <div className="p-5">
-            <ProfileForm name={admin.name} />
+            <ProfileForm name={admin.name} username={admin.username} />
           </div>
         </Panel>
         <Panel title="Password">

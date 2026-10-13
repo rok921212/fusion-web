@@ -31,7 +31,19 @@ export function escapeRegex(value: string) {
 
 export const OBJECT_ID = /^[0-9a-f]{24}$/;
 
-export function passwordProblem(password: string, email = "") {
+export const USERNAME = /^[a-z0-9][a-z0-9._-]{2,31}$/;
+
+/** Login IDs never contain "@", so sign-in can tell them from emails. */
+export function usernameProblem(username: string) {
+  if (username.length < 3) return "Use at least 3 characters.";
+  if (username.length > 32) return "Use at most 32 characters.";
+  if (!USERNAME.test(username)) {
+    return "Use lowercase letters, numbers, dots, dashes or underscores, starting with a letter or number.";
+  }
+  return null;
+}
+
+export function passwordProblem(password: string, email = "", username = "") {
   if (password.length < 10) return "Use at least 10 characters.";
   if (password.length > 200) return "Use at most 200 characters.";
   const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) =>
@@ -43,6 +55,10 @@ export function passwordProblem(password: string, email = "") {
   const local = email.split("@")[0]?.toLowerCase();
   if (local && local.length >= 4 && password.toLowerCase().includes(local)) {
     return "Do not include your email address in the password.";
+  }
+  const id = username.toLowerCase();
+  if (id.length >= 4 && password.toLowerCase().includes(id)) {
+    return "Do not include your username in the password.";
   }
   return null;
 }

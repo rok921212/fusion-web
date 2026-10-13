@@ -32,7 +32,7 @@ function PasswordInput(props: ComponentProps<typeof Input>) {
   );
 }
 
-function TextField({
+export function TextField({
   name,
   label,
   errors,
@@ -89,10 +89,39 @@ function PasswordField({
   );
 }
 
+export function UsernameField({
+  errors,
+  defaultValue,
+}: {
+  errors: Record<string, string>;
+  defaultValue?: string;
+}) {
+  return (
+    <div>
+      <Label htmlFor="username">Username</Label>
+      <Input
+        id="username"
+        name="username"
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        defaultValue={defaultValue}
+        required
+        aria-invalid={!!errors.username}
+        aria-describedby="username-error username-help"
+      />
+      <p id="username-help" className="mt-1.5 text-xs text-muted">
+        Used to sign in. 3–32 lowercase letters, numbers, dots, dashes or underscores.
+      </p>
+      <FieldError id="username-error" message={errors.username} />
+    </div>
+  );
+}
+
 const PASSWORD_HELP =
   "At least 10 characters, mixing three of: lowercase, uppercase, numbers, symbols.";
 
-function NewPasswordFields({ errors }: { errors: Record<string, string> }) {
+export function NewPasswordFields({ errors }: { errors: Record<string, string> }) {
   return (
     <>
       <PasswordField
@@ -135,10 +164,11 @@ export function LoginForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <TextField
-        name="email"
-        label="Email"
-        type="email"
+        name="login"
+        label="Username or email"
         autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
         required
         errors={{}}
       />
@@ -169,11 +199,12 @@ export function RegisterForm({ first }: { first: boolean }) {
         help="The admin access code from the website owner."
       />
       <TextField name="name" label="Your name" autoComplete="name" errors={errors} />
+      <UsernameField errors={errors} />
       <TextField
         name="email"
         label="Email"
         type="email"
-        autoComplete="username"
+        autoComplete="email"
         errors={errors}
       />
       <NewPasswordFields errors={errors} />
@@ -202,13 +233,16 @@ export function AcceptInviteForm({
   return (
     <form onSubmit={onSubmit} className="space-y-5" noValidate>
       {kind === "invite" && (
-        <TextField
-          name="name"
-          label="Your name"
-          autoComplete="name"
-          defaultValue={name}
-          errors={errors}
-        />
+        <>
+          <TextField
+            name="name"
+            label="Your name"
+            autoComplete="name"
+            defaultValue={name}
+            errors={errors}
+          />
+          <UsernameField errors={errors} />
+        </>
       )}
       <NewPasswordFields errors={errors} />
       <Status state={state} />
@@ -219,7 +253,7 @@ export function AcceptInviteForm({
   );
 }
 
-export function ProfileForm({ name }: { name: string }) {
+export function ProfileForm({ name, username }: { name: string; username: string | null }) {
   const [state, onSubmit, pending] = useFormAction(updateProfile, undefined);
   const errors = state?.errors ?? {};
   return (
@@ -231,6 +265,7 @@ export function ProfileForm({ name }: { name: string }) {
         defaultValue={name}
         errors={errors}
       />
+      <UsernameField errors={errors} defaultValue={username ?? ""} />
       <Status state={state} />
       <Button type="submit" variant="dark" disabled={pending}>
         {pending ? "Saving…" : "Save profile"}
